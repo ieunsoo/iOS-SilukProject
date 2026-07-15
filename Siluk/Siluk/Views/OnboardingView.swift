@@ -15,19 +15,20 @@ struct OnboardingView: View {
     private let features: [OnboardingFeatureItem] = [
         OnboardingFeatureItem(
             imageName: "smile_green",
-            title: "Guide Image",
-            description: "When the image turns green, you're doing it correctly!\nHold it briefly and it counts!"
-        ),
-        OnboardingFeatureItem(
-            imageName: "circularProgress",
-            title: "Progress Circle",
-            description: "Check your progress with the circular graph in the top right"
+            title: "가이드 이미지",
+            description: "이미지가 초록색으로 바뀌면 올바르게 하고 있는 거예요!\n잠시 유지하면 횟수가 올라갑니다!"
         ),
         OnboardingFeatureItem(
             systemIconName: "gear",
             iconSize: 60,
-            title: "Settings Button",
-            description: "Adjust sensitivity and display options with the bottom left settings button"
+            title: "설정 버튼",
+            description: "왼쪽 상단 설정 버튼으로 민감도와 화면 옵션을 조절하세요"
+        ),
+        OnboardingFeatureItem(
+            systemIconName: "lock.iphone",
+            iconSize: 60,
+            title: "개인정보 보호",
+            description: "실룩은 인터넷 연결이 필요 없는 앱 입니다. 카메라는 얼굴 인식을 위해서만 존재할 뿐 따로 저장되지 않습니다!"
         )
     ]
     
@@ -35,6 +36,7 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 0) {
             titleSection
+            subTitleSection
             featuresListSection
             Spacer()
             startButton
@@ -45,12 +47,19 @@ struct OnboardingView: View {
     
     // MARK: - View Components
     private var titleSection: some View {
-        Text("Welcome to Go!Face")
-            .font(.largeTitle)
+        Text("실룩에 오신 것을 환영합니다.")
+            .font(.title)
             .fontWeight(.bold)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, LayoutConstants.horizontalPadding)
-            .padding(.vertical, LayoutConstants.verticalPadding)
+            .padding(.top, LayoutConstants.horizontalPadding)
+//            .padding(.vertical, LayoutConstants.verticalPadding)
+    }
+    private var subTitleSection: some View {
+        Text("열심히 얼굴을 실룩여봐요!")
+            .font(.title3)
+            .foregroundStyle(.gray)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, LayoutConstants.verticalPadding)
     }
     
     private var featuresListSection: some View {
@@ -67,7 +76,7 @@ struct OnboardingView: View {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
             isPresented = false
         } label: {
-            Text("Get Started")
+            Text("시작하기")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, LayoutConstants.buttonVerticalPadding)

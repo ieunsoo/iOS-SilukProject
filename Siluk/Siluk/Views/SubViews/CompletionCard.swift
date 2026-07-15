@@ -11,28 +11,28 @@ struct CompletionCard: View {
                 .padding(.bottom, 24)
             
             // Headline
-            Text("Stretching Complete!")
+            Text("스트레칭 완료!")
                 .font(.system(size: 28, weight: .bold))
-            
+
             // Encouragement message
             VStack(spacing: 6) {
-                Text("Good work! Your facial muscles are more relaxed.")
+                Text("수고하셨어요! 얼굴 근육이 한결 부드러워졌어요.")
                     .font(.body.weight(.medium))
             }
             .multilineTextAlignment(.center)
             .padding(.bottom, 10)
-            
+
             // Progress message
             VStack(spacing: 4) {
-                Text("When muscles that weren't used before start to move,")
-                Text("you'll find a natural smile coming more easily.")
+                Text("평소 쓰지 않던 근육이 움직이기 시작하면,")
+                Text("자연스러운 미소가 더 쉽게 지어질 거예요.")
             }
             .font(.subheadline)
             .multilineTextAlignment(.center)
             .lineSpacing(3)
             
             Button(action: onRestart) {
-                Label("Restart", systemImage: "arrow.counterclockwise")
+                Label("다시 시작", systemImage: "arrow.counterclockwise")
                     .font(.headline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 20)

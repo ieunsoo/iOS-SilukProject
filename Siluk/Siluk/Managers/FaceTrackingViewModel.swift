@@ -3,11 +3,12 @@ import Combine
 import ARKit
 import SceneKit
 import AVFoundation
+import UIKit
 
 @MainActor
 final class FaceTrackingViewModel: ObservableObject {
     @Published var isSupported: Bool = true
-    @Published var statusMessage: String = "Initializing..."
+    @Published var statusMessage: String = "초기화 중..."
     @Published var routine: [FaceAction] = FaceAction.defaultRoutine
     @Published var currentActionIndex: Int = 0
     @Published var isHolding: Bool = false
@@ -19,6 +20,12 @@ final class FaceTrackingViewModel: ObservableObject {
     private let delegate = FaceSessionDelegate()
     private var wasHolding: Bool = false
     private var hasStartedSession: Bool = false
+
+    // MARK: - Haptics
+    // Light tap when the expression is recognized (guide image turns green),
+    // heavy thump when an action completes and moves to the next one.
+    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
+    private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
     
     // MARK: - Timing Control Properties
     private var holdStartTime: Date? // Time when user starts holding the expression
@@ -65,9 +72,9 @@ final class FaceTrackingViewModel: ObservableObject {
         cameraAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
         
         if status {
-            statusMessage = "Camera access granted"
+            statusMessage = "카메라 접근이 허용되었습니다"
         } else {
-            statusMessage = "Camera access denied"
+            statusMessage = "카메라 접근이 거부되었습니다"
         }
     }
 
@@ -75,24 +82,24 @@ final class FaceTrackingViewModel: ObservableObject {
         // Check if device supports face tracking
         guard ARFaceTrackingConfiguration.isSupported else {
             isSupported = false
-            statusMessage = "Face tracking not supported on this device"
+            statusMessage = "이 기기에서는 얼굴 인식을 지원하지 않습니다"
             return
         }
         
         // Check camera authorization
         let authStatus = AVCaptureDevice.authorizationStatus(for: .video)
         guard authStatus == .authorized else {
-            statusMessage = "Camera permission required"
+            statusMessage = "카메라 권한이 필요합니다"
             return
         }
-        
+
         // Prevent multiple starts
         guard !hasStartedSession else {
-            statusMessage = "Session already running"
+            statusMessage = "세션이 이미 실행 중입니다"
             return
         }
-        
-        statusMessage = "Starting camera session..."
+
+        statusMessage = "카메라 세션을 시작하는 중..."
         
         // Small delay to ensure view is ready
         Task {
@@ -104,8 +111,12 @@ final class FaceTrackingViewModel: ObservableObject {
             // Start fresh session
             session.run(config, options: [.resetTracking, .removeExistingAnchors])
             hasStartedSession = true
-            
-            statusMessage = "Looking for your face..."
+
+            // Warm up haptic engines to minimize first-tap latency
+            lightHaptic.prepare()
+            heavyHaptic.prepare()
+
+            statusMessage = "얼굴을 찾는 중..."
         }
     }
 
@@ -132,17 +143,17 @@ final class FaceTrackingViewModel: ObservableObject {
     private func handle(_ event: FaceSessionEvent) {
         switch event {
         case .faceUpdated(let blendShapes):
-            statusMessage = "Tracking your face"
+            statusMessage = "얼굴을 인식하는 중"
             detectActionRep(from: blendShapes)
 
         case .error(let message):
-            statusMessage = "Error: \(message)"
+            statusMessage = "오류: \(message)"
 
         case .interrupted:
-            statusMessage = "Session interrupted"
+            statusMessage = "세션이 중단되었습니다"
 
         case .interruptionEnded:
-            statusMessage = "Resuming session..."
+            statusMessage = "세션을 재개하는 중..."
             // Don't auto-restart, let the user control it
             hasStartedSession = false
         }
@@ -157,6 +168,9 @@ final class FaceTrackingViewModel: ObservableObject {
         // When user starts holding the expression
         if isActive && !wasHolding {
             holdStartTime = Date()
+            // Guide image turns green at this moment → light haptic feedback
+            lightHaptic.impactOccurred()
+            lightHaptic.prepare()
         }
         
         // When user releases the expression
@@ -264,6 +278,10 @@ final class FaceTrackingViewModel: ObservableObject {
         wasHolding = false
         isHolding = false
         isTransitioning = true
+
+        // An action just finished and is moving to the next → heavy haptic feedback
+        heavyHaptic.impactOccurred()
+        heavyHaptic.prepare()
         
         // Reset timing control for next action
         holdStartTime = nil
