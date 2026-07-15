@@ -24,7 +24,7 @@ struct SettingsView: View {
                             }
                             
                             Slider(value: $settings.guideImageScale, in: 0.5...2.0, step: 0.1) {
-                                Text("Image Size")
+                                Text("이미지 배율")
                             } minimumValueLabel: {
                                 Image(systemName: "photo")
                                     .font(.caption)
@@ -63,7 +63,7 @@ struct SettingsView: View {
                         }
                         
                         Slider(value: $settings.faceDetectionSensitivity, in: 0.0...1.0, step: 0.1) {
-                            Text("Face Detection Sensitivity")
+                            Text("얼굴 인식 민감도")
                         } minimumValueLabel: {
                             Text("둔감")
                                 .font(.caption)

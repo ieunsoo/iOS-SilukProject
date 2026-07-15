@@ -4,12 +4,14 @@ import SceneKit
 
 struct MainView: View {
     @StateObject private var faceTrackingVM = FaceTrackingViewModel()
-    @State private var instructionMessage: InstructionMessage?
-    @State private var holdingMessage: InstructionMessage?
     @State private var showSettings = false
     @State private var showOnboarding = false
     @State private var isReadyToStart = false
     @Bindable private var settings = AppSettings.shared
+
+    // Diameter of the Face ID style cutout as a fraction of the shorter screen side.
+    // Shared by the cutout overlay and the instruction text placed below it.
+    private let cutoutFraction: CGFloat = 0.7
     
     var body: some View {
         ZStack {
@@ -49,12 +51,12 @@ struct MainView: View {
     }
     
     // MARK: - Camera View
-    private var cameraView: some View {
+    var cameraView: some View {
         ZStack {
             // AR camera background
             ARCameraView(session: faceTrackingVM.session)
                 .ignoresSafeArea()
-                .onAppear { 
+                .onAppear {
                     // Only start if not showing onboarding
                     if !showOnboarding {
                         faceTrackingVM.start()
@@ -63,7 +65,7 @@ struct MainView: View {
                     }
                 }
                 .onDisappear { faceTrackingVM.pause() }
-            
+
             // MARK: center overlay, Guide Image
             if settings.showGuideImage, let action = faceTrackingVM.currentAction, !faceTrackingVM.isRoutineComplete, !faceTrackingVM.isTransitioning {
                 GeometryReader { geometry in
@@ -71,12 +73,12 @@ struct MainView: View {
                     let minDimension = min(geometry.size.width, geometry.size.height)
                     let baseSize = minDimension / 2.5
                     let imageSize = baseSize * settings.guideImageScale
-                    
+
                     // Determine image name (based on white image usage)
                     let imageSuffix = settings.useWhiteImage ? "_white" : ""
                     let normalImageName = "\(action.currentImageName)\(imageSuffix)"
                     let highlightImageName = "\(action.currentImageName)_green"
-                    
+
                     ZStack {
                         // Normal image (white or default)
                         Image(normalImageName)
@@ -85,7 +87,7 @@ struct MainView: View {
                             .frame(width: imageSize, height: imageSize)
                             .scaleEffect(faceTrackingVM.isHolding ? 1.1 : 1.0)
                             .opacity(faceTrackingVM.isHolding ? 0 : 0.7)
-                        
+
                         // Green image (on success)
                         Image(highlightImageName)
                             .resizable()
@@ -102,150 +104,93 @@ struct MainView: View {
                     .id("\(action.id)-\(action.currentSubStepIndex)-\(settings.useWhiteImage)")
                 }
             }
-            
+
+            // Face ID style dark layer with a circular cutout in the center
+            FaceCutoutOverlay(circleFraction: cutoutFraction)
+
+            // Instruction text centered right below the cutout circle
+            if !faceTrackingVM.isRoutineComplete, let action = faceTrackingVM.currentAction {
+                GeometryReader { geometry in
+                    let diameter = min(geometry.size.width, geometry.size.height) * cutoutFraction
+                    Text(faceTrackingVM.isHolding ? "얼굴 인식 완료!" : action.currentInstruction)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(faceTrackingVM.isHolding ? Color.green : Color.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .frame(maxWidth: .infinity)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: faceTrackingVM.isHolding)
+                        .position(
+                            x: geometry.size.width / 2,
+                            y: geometry.size.height / 2 + diameter / 2 + 40
+                        )
+                }
+                .allowsHitTesting(false)
+            }
+
             if faceTrackingVM.isRoutineComplete {
                 CompletionCard(onRestart: {
                     faceTrackingVM.restartRoutine()
                 })
                 .padding(20)
             }
-            
-            //MARK: top information bar
-            VStack(alignment: .center, spacing: 0) {
-                HStack {
-                    if let action = faceTrackingVM.currentAction {
-                        HStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(action.name)
-                                    .font(.largeTitle)
-                                    .fontWeight(.heavy)
-                                
-                                Text("\(action.actionDescription)")
-                                    .font(.headline)
-                                
-                                Text("tip: \(action.recognitionTip)")
-                                    .foregroundStyle(.gray)
-                                    .italic()
-                                
-                            }
-                        }
-                        .padding(20)
-                    }
-                    
-                    Spacer()
-                    
-                    CircularStepProgressView(
-                        currentStep: faceTrackingVM.isRoutineComplete
-                        ? faceTrackingVM.routine.count
-                        : faceTrackingVM.currentActionIndex + 1,
-                        totalSteps: faceTrackingVM.routine.count,
-                        currentAction: faceTrackingVM.currentAction
-                    )
-                    .padding(.trailing, 10)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 20)
-                .background(
-                    RoundedRectangle(cornerRadius: 30)
-                        .fill(.ultraThinMaterial)
-                        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+
+            //MARK: top information + bottom buttons
+            VStack(alignment: .leading, spacing: 0) {
+                // Overall routine progress bar at the very top
+                LinearStepProgressView(
+                    currentStep: faceTrackingVM.currentActionIndex + 1,
+                    totalSteps: faceTrackingVM.routine.count,
+                    currentAction: faceTrackingVM.currentAction,
+                    onSettingsTap: { showSettings = true }
                 )
                 .padding(.horizontal, 20)
-                .padding(.top, 20)
-                
-                Spacer()
-                
-                // instant message capsule
-                ZStack(alignment: .bottom){
-                    VStack(spacing: 8) {
-                        if let message = instructionMessage {
-                            InstructionMessageCapsule(message: message.text, type: .instruction)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                                .id(message.id)
-                        }
-                        
-                        if let message = holdingMessage {
-                            InstructionMessageCapsule(message: message.text, type: .holding)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                                .id(message.id)
-                        }
-                        
-                        if faceTrackingVM.isTransitioning {
-                            InstructionMessageCapsule(message: "Complete! Moving to next exercise." , type: .transition)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                        
-                        
+                .padding(.bottom, 20)
+
+                // Top information text (drawn directly on the black layer)
+                if let action = faceTrackingVM.currentAction {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(action.name)
+                            .font(.largeTitle)
+                            .fontWeight(.heavy)
+                            .foregroundStyle(.white)
+
+                        Text(action.actionDescription)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        Text("팁: \(action.recognitionTip)")
+                            .foregroundStyle(.gray)
+                            .font(.caption)
                     }
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: instructionMessage)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: holdingMessage)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: faceTrackingVM.isTransitioning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
-                    
-                    // Bottom buttons
-                    HStack {
-                        // Settings button - left
-                        Button(action: {
-                            showSettings = true
-                        }) {
-                            Image(systemName: "gearshape.fill")
-                                .resizable()
-                                .frame(width: 20, height: 20)
-                                .foregroundStyle(.white)
-                                .padding(20)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 45)
-                                        .fill(Color.gray)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        
-                        
-                        Spacer()
-                        
-                        // Skip button - right
-                        Button(action: {
-                            withAnimation(.easeInOut) { faceTrackingVM.skipCurrentAction() }
-                        }){
-                            Text("Skip")
-                                .fontWeight(.semibold)
-                                .padding(.vertical, 20)
-                                .padding(.horizontal, 20)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 45)
-                                        .fill(Color.accentColor)
-                                )
-                                .foregroundStyle(.white)
-                        }
-                        .buttonStyle(.plain)
+                    .padding(.top, 20)
+                }
+
+                Spacer()
+
+                // Bottom buttons
+                HStack {
+                    Spacer()
+
+                    // Skip button - right
+                    Button(action: {
+                        withAnimation(.easeInOut) { faceTrackingVM.skipCurrentAction() }
+                    }){
+                        Text("건너뛰기")
+                            .fontWeight(.semibold)
+                            .padding(.vertical, 20)
+                            .padding(.horizontal, 20)
+                            .background(
+                                RoundedRectangle(cornerRadius: 45)
+                                    .fill(Color.accentColor)
+                            )
+                            .foregroundStyle(.white)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(20)
-            }
-            .onChange(of: faceTrackingVM.currentAction?.currentInstruction) { newValue in
-                if let instruction = newValue {
-                    showInstructionMessage(instruction)
-                }
-            }
-            .onChange(of: faceTrackingVM.isHolding) { newValue in
-                if newValue {
-                    showHoldingMessage()
-                    
-                } else {
-                    hideHoldingMessage()
-                }
-            }
-            .onChange(of: faceTrackingVM.isTransitioning) { newValue in
-                if newValue {
-                    // Hide existing messages when transition starts
-                    hideAllMessages()
-                }
-            }
-            .onAppear {
-                // Show initial instruction message when app starts
-                if let firstInstruction = faceTrackingVM.currentAction?.currentInstruction {
-                    showInstructionMessage(firstInstruction)
-                }
             }
         }
     }
@@ -255,7 +200,7 @@ struct MainView: View {
             Image(systemName: "faceid")
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
-            Text("Face Tracking Not Supported")
+            Text("얼굴 인식을 지원하지 않는 기기입니다")
                 .font(.title2.bold())
             Text(faceTrackingVM.statusMessage)
                 .font(.body)
@@ -273,10 +218,10 @@ struct MainView: View {
                 .foregroundColor(.accentColor)
             
             VStack(spacing: 12) {
-                Text("Camera Access Required")
+                Text("카메라 접근 권한이 필요합니다")
                     .font(.title.bold())
-                
-                Text("This app uses face tracking to guide you through facial exercises. Please grant camera access to continue.")
+
+                Text("이 앱은 얼굴 인식을 통해 얼굴 운동을 안내합니다. 계속하려면 카메라 접근을 허용해 주세요.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -293,7 +238,7 @@ struct MainView: View {
                     }
                 }
             }) {
-                Text("Allow Camera Access")
+                Text("카메라 접근 허용")
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.vertical, 16)
@@ -313,10 +258,10 @@ struct MainView: View {
                 .foregroundColor(.red)
             
             VStack(spacing: 12) {
-                Text("Camera Access Denied")
+                Text("카메라 접근이 거부되었습니다")
                     .font(.title.bold())
-                
-                Text("Please enable camera access in Settings to use this app.")
+
+                Text("이 앱을 사용하려면 설정에서 카메라 접근을 허용해 주세요.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -329,7 +274,7 @@ struct MainView: View {
                     UIApplication.shared.open(settingsURL)
                 }
             }) {
-                Text("Open Settings")
+                Text("설정 열기")
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.vertical, 16)
@@ -339,38 +284,6 @@ struct MainView: View {
             }
         }
         .padding(40)
-    }
-    
-    private func showInstructionMessage(_ text: String) {
-        let newMessage = InstructionMessage(text: text)
-        
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            instructionMessage = newMessage
-        }
-    }
-    
-    private func showHoldingMessage() {
-        let newMessage = InstructionMessage(text: "Face Matched!")
-        
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            // Hide instruction message
-            instructionMessage = nil
-            // Show holding message
-            holdingMessage = newMessage
-        }
-    }
-    
-    private func hideHoldingMessage() {
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-            holdingMessage = nil
-        }
-    }
-    
-    private func hideAllMessages() {
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-            instructionMessage = nil
-            holdingMessage = nil
-        }
     }
     
     // MARK: - Onboarding Check
@@ -393,117 +306,55 @@ private enum UserDefaultsKeys {
     static let hasLaunchedBefore = "hasLaunchedBefore"
 }
 
-// MARK: - Design Preview
-/// Static mockup of the execution (camera) screen for iterating on the design.
-/// The real screen relies on ARKit + FaceTrackingViewModel, which can't run in the
-/// canvas, so this reproduces the same layout over a simulated camera background.
-private struct MainViewDesignPreview: View {
-    // Sample data mimicking a live session
-    private let sampleAction = FaceAction(
-        id: "sample",
-        name: "Cheek Lift",
-        instruction: "Smile as wide as you can",
-        imageName: "",
-        requiredAnchors: [],
-        detectionMode: .all,
-        repeatGoal: 5,
-        completedCount: 2,
-        actionDescription: "Lift both cheeks toward your eyes",
-        recognitionTip: "Keep your face centered in the frame"
-    )
+// MARK: - Face ID Style Cutout Overlay
+/// A dark layer covering the whole screen with a circular hole punched in the
+/// center, mimicking iOS Face ID enrollment. The camera behind shows through the hole.
+struct FaceCutoutOverlay: View {
+    /// Diameter of the circular hole as a fraction of the shorter screen side.
+    var circleFraction: CGFloat = 1
+    /// Fill color / opacity of the surrounding mask.
+    var overlayColor: Color = .black.opacity(0.9)
+    /// Ring drawn around the cutout edge.
+    var ringColor: Color = .white.opacity(0.9)
+    var ringWidth: CGFloat = 4
 
     var body: some View {
-        ZStack {
-            // Simulated camera background
-            LinearGradient(
-                colors: [Color(white: 0.25), Color(white: 0.1)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+        GeometryReader { geometry in
+            let diameter = min(geometry.size.width, geometry.size.height) * circleFraction
+            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
 
-            // Guide image placeholder (center overlay)
-            Image(systemName: "face.smiling")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 160, height: 160)
-                .foregroundStyle(.white.opacity(0.7))
-
-            VStack(alignment: .center, spacing: 0) {
-                // Top information bar
-                HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(sampleAction.name)
-                            .font(.largeTitle)
-                            .fontWeight(.heavy)
-
-                        Text(sampleAction.actionDescription)
-                            .font(.headline)
-
-                        Text("tip: \(sampleAction.recognitionTip)")
-                            .foregroundStyle(.gray)
-                            .italic()
+            ZStack {
+                // Dark mask with the circle cut out (even-odd rule punches the hole)
+                overlayColor
+                    .mask {
+                        Rectangle()
+                            .overlay {
+                                Circle()
+                                    .frame(width: diameter, height: diameter)
+                                    .position(center)
+                                    .blendMode(.destinationOut)
+                            }
+                            .compositingGroup()
                     }
-                    .padding(20)
 
-                    Spacer()
-
-                    CircularStepProgressView(
-                        currentStep: 3,
-                        totalSteps: 10,
-                        currentAction: sampleAction
-                    )
-                    .padding(.trailing, 10)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 20)
-                .background(
-                    RoundedRectangle(cornerRadius: 30)
-                        .fill(.ultraThinMaterial)
-                        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-
-                Spacer()
-
-                // Instruction capsule + bottom buttons
-                ZStack(alignment: .bottom) {
-                    InstructionMessageCapsule(message: sampleAction.currentInstruction, type: .instruction)
-                        .padding(.horizontal, 20)
-
-                    HStack {
-                        Image(systemName: "gearshape.fill")
-                            .resizable()
-                            .frame(width: 20, height: 20)
-                            .foregroundStyle(.white)
-                            .padding(20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 45)
-                                    .fill(Color.gray)
-                            )
-
-                        Spacer()
-
-                        Text("Skip")
-                            .fontWeight(.semibold)
-                            .padding(.vertical, 20)
-                            .padding(.horizontal, 20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 45)
-                                    .fill(Color.accentColor)
-                            )
-                            .foregroundStyle(.white)
-                    }
-                }
-                .padding(20)
+                // Edge ring around the cutout
+//                Circle()
+//                    .stroke(ringColor, lineWidth: ringWidth)
+//                    .frame(width: diameter, height: diameter)
+//                    .position(center)
             }
         }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
-#Preview("Main Screen Design") {
-    MainViewDesignPreview()
+// MARK: - Preview
+/// Renders the real camera screen. In the canvas the AR feed shows as a blank
+/// background (ARKit needs a device), but the overlay design and live sample data
+/// from FaceTrackingViewModel's default routine render exactly as in the app.
+#Preview("Camera Screen") {
+    MainView().cameraView
 }
 
 
